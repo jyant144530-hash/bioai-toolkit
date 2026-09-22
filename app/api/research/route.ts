@@ -69,6 +69,44 @@ export async function POST(req: NextRequest) {
     entities.drug ? lookupCompound(entities.drug) : Promise.resolve(null),
   ]);
 
+  // Post-filter: require at least TWO distinct primary entity groups to match
+  if (papers.length > 0) {
+    const termGroups: string[][] = [];
+
+    // Group 1: drug/compound
+    if (entities.drug) {
+      termGroups.push(
+        entities.drug.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+      );
+    }
+
+    // Group 2: disease
+    if (entities.disease) {
+      termGroups.push(
+        entities.disease.toLowerCase().split(/\s+/).filter((w) => w.length > 3)
+      );
+    }
+
+    // Group 3: genes — require mutation-specific terms
+    if (entities.genes && entities.genes.length > 0) {
+      termGroups.push(
+        entities.genes.flatMap((g) => g.toLowerCase().split(/\s+/))
+          .filter((w) => w.length > 3)
+      );
+    }
+
+    if (termGroups.length > 0) {
+      const MIN_GROUPS = termGroups.length >= 3 ? 2 : 1;
+      papers = papers.filter((p) => {
+        const hay = (p.title + ' ' + (p.abstract ?? '')).toLowerCase();
+        const matchedGroups = termGroups.filter((group) =>
+          group.some((w) => hay.includes(w))
+        ).length;
+        return matchedGroups >= MIN_GROUPS;
+      });
+    }
+  }
+
   if (papers.length === 0) {
     const fallbackQuery = [entities.drug, entities.disease]
       .filter(Boolean)
